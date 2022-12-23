@@ -6,6 +6,7 @@ import itertools
 from datetime import datetime, timedelta
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, get_datetime, get_time, getdate
 
@@ -23,7 +24,26 @@ from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
 
 class ShiftType(Document):
 	@frappe.whitelist()
-	def process_auto_attendance(self):
+	def process_attendance_for_shift(self):
+		logs = self.get_checkin_records()
+		if len(logs) > 100:
+			frappe.enqueue(
+				process_attendance_in_background,
+				timeout=600,
+				shift_doc=self,
+				checkin_records=logs,
+				publish_progress=False,
+			)
+
+			frappe.msgprint(
+				_("Attendance submission is queued. It may take a few minutes"),
+				alert=True,
+				indicator="blue",
+			)
+		else:
+			self.process_attendance_for_shift()
+
+	def get_checkin_records(self):
 		if (
 			not cint(self.enable_auto_attendance)
 			or not self.process_attendance_after
@@ -38,9 +58,16 @@ class ShiftType(Document):
 			"shift_actual_end": ("<", self.last_sync_of_checkin),
 			"shift": self.name,
 		}
+
 		logs = frappe.db.get_list(
 			"Employee Checkin", fields="*", filters=filters, order_by="employee,time"
 		)
+
+		return logs
+
+	def process_auto_attendance(self, logs: list | None = None):
+		if not logs:
+			logs = self.get_checkin_records()
 
 		for key, group in itertools.groupby(
 			logs, key=lambda x: (x["employee"], x["shift_actual_start"])
@@ -209,6 +236,11 @@ class ShiftType(Document):
 		)
 
 		return list(set(default_shift_employees) - set(active_shift_assignments))
+
+
+def process_attendance_in_background(shift_doc: dict, checkin_records: list):
+	"""Process attendance for the given shift and checkin records"""
+	shift_doc.process_attendance(checkin_records)
 
 
 def process_auto_attendance_for_all_shifts():
