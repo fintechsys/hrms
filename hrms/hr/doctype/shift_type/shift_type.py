@@ -41,7 +41,7 @@ class ShiftType(Document):
 				indicator="blue",
 			)
 		else:
-			self.process_attendance_for_shift()
+			self.process_auto_attendance()
 
 	def get_checkin_records(self):
 		if (
@@ -240,7 +240,7 @@ class ShiftType(Document):
 
 def process_attendance_in_background(shift_doc: dict, checkin_records: list):
 	"""Process attendance for the given shift and checkin records"""
-	shift_doc.process_attendance(checkin_records)
+	shift_doc.process_auto_attendance(checkin_records)
 
 
 def process_auto_attendance_for_all_shifts():
